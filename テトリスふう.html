@@ -1,0 +1,1105 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#141827"><meta name="apple-mobile-web-app-capable" content="yes"><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui}[hidden]{display:none!important}img{max-width:100%}</style><script>window.BLOCKDROP_STANDALONE=true</script></head><body><title>ブロックドロップ</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
+<style>
+/* Layout: one-screen handheld — HUD strip, well + side rail (hold/next), thumb pad; menus are full-screen sheets.
+   Skins are a player choice (夜 / 和紙 / 深海), applied by JS onto these tokens. */
+:root{
+  --bg:#141827; --well:#0c0f1c; --grid:#1c2236; --panel:#1d2337; --line:#2c3450;
+  --fg:#ece6d6; --muted:#8e93a8; --accent:#e6c85e; --on-accent:#1a1a12; --sheet:rgba(14,17,30,.96);
+  --font-display:"DotGothic16","Hiragino Kaku Gothic ProN",monospace;
+  --font-body:-apple-system,"Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
+  color-scheme:dark;
+}
+html{box-sizing:border-box;height:100%;background:var(--bg);overflow:hidden}
+*,*::before,*::after{box-sizing:inherit}
+body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
+  overflow:hidden;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
+  touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:8px}
+button,input{font:inherit;color:inherit;-webkit-tap-highlight-color:transparent}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+#app{height:100%;max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:10px}
+
+/* HUD */
+.hud{display:flex;align-items:center;gap:8px}
+.stat{display:flex;flex-direction:column;gap:2px;min-width:0}
+.stat.main{flex:1}
+.lbl{font-family:var(--font-display);font-size:10px;letter-spacing:.14em;color:var(--muted)}
+.val{font-family:var(--font-display);font-size:20px;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stat.main .val{font-size:clamp(19px,7vw,26px);color:var(--accent)}
+.stat.small{width:58px}
+.icon-btn{width:40px;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--panel);
+  display:grid;place-items:center;font-family:var(--font-display);font-size:14px;cursor:pointer;flex:none}
+.icon-btn svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* Play area */
+.play{flex:1;min-height:0;display:flex;gap:10px;justify-content:center}
+#wellWrap{flex:1;min-width:0;min-height:0;display:flex;justify-content:flex-end;align-items:flex-start}
+.stage{position:relative;touch-action:none;border-radius:6px;box-shadow:0 0 0 2px var(--line),0 10px 30px rgba(0,0,0,.3)}
+#board{display:block;border-radius:6px}
+.rail{width:58px;flex:none;display:flex;flex-direction:column;gap:10px}
+.box{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 0;border-radius:8px;
+  background:var(--panel);border:1px solid var(--line)}
+button.box{cursor:pointer}
+.box canvas{display:block}
+
+/* Pad */
+.pad{display:flex;justify-content:space-between;gap:12px;padding-bottom:4px}
+.pad.swap{flex-direction:row-reverse}
+.grp{display:flex;gap:8px}
+.key{width:clamp(38px,calc((100vw - 96px) / 6),62px);height:clamp(48px,15vw,64px);border-radius:14px;border:1px solid var(--line);
+  background:var(--panel);display:grid;place-items:center;cursor:pointer;touch-action:none;
+  box-shadow:0 3px 0 var(--line);transition:transform .05s}
+.pad.big .key{width:clamp(40px,calc((100vw - 96px) / 6),70px);height:clamp(58px,19vw,80px)}
+.key.on{transform:translateY(2px);box-shadow:0 1px 0 var(--line);background:var(--line)}
+.key.drop{background:var(--accent);color:var(--on-accent);border-color:var(--accent);box-shadow:0 3px 0 var(--line)}
+.key svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+
+/* Full-screen sheets */
+.screen{position:fixed;inset:0;z-index:10;background:var(--sheet);overflow-y:auto;-webkit-overflow-scrolling:touch;
+  padding-top:calc(env(safe-area-inset-top,0px) + 20px);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 24px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.sheet{max-width:440px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.sheet h1,.sheet h2{margin:0;font-family:var(--font-display);font-weight:400;text-wrap:balance}
+.sheet h1{font-size:34px;color:var(--accent);letter-spacing:.04em;text-align:center;margin-top:8px}
+.sheet h2{font-size:22px}
+.sub{color:var(--muted);font-size:13px;margin:0;text-align:center}
+.modes{display:flex;flex-direction:column;gap:10px}
+.mode{display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 12px;text-align:left;padding:14px 16px;
+  border-radius:14px;border:1px solid var(--line);background:var(--panel);cursor:pointer}
+.mode b{font-family:var(--font-display);font-weight:400;font-size:18px}
+.mode small{grid-column:1;color:var(--muted);font-size:12px}
+.mode .pb{grid-row:1/3;grid-column:2;text-align:right;font-family:var(--font-display);font-size:13px;color:var(--accent);font-variant-numeric:tabular-nums}
+.mode .pb span{display:block;font-size:9px;color:var(--muted);letter-spacing:.12em}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.row>*{flex:1}
+.cta{padding:13px 22px;border-radius:999px;border:0;background:var(--accent);color:var(--on-accent);font-family:var(--font-display);
+  font-size:16px;cursor:pointer}
+.btn{padding:11px 18px;border-radius:999px;border:1px solid var(--line);background:var(--panel);font-size:14px;cursor:pointer}
+.how{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:13px;margin:0;padding:14px 16px;border-radius:14px;border:1px dashed var(--line)}
+.how dt{color:var(--accent);font-family:var(--font-display)}
+.how dd{margin:0;color:var(--muted)}
+.big{font-family:var(--font-display);font-size:44px;color:var(--accent);font-variant-numeric:tabular-nums;text-align:center;line-height:1.1}
+.result-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.result-grid div{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:10px;background:var(--panel)}
+.result-grid .val{font-size:16px}
+.badge{align-self:center;padding:4px 12px;border-radius:999px;background:var(--accent);color:var(--on-accent);font-family:var(--font-display);font-size:13px}
+.field{display:flex;gap:8px}
+.field input{flex:1;min-width:0;padding:11px 14px;border-radius:12px;border:1px solid var(--line);background:var(--well);font-size:16px;-webkit-user-select:text;user-select:text}
+.note{font-size:12px;color:var(--muted);margin:0;text-align:center}
+.setting{display:flex;flex-direction:column;gap:6px}
+.setting .lbl{font-size:11px}
+.seg{display:flex;gap:4px;padding:4px;border-radius:12px;background:var(--well);border:1px solid var(--line)}
+.seg button{flex:1;padding:9px 4px;border-radius:9px;border:0;background:transparent;font-size:13px;cursor:pointer;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--on-accent)}
+.tabs{display:flex;gap:4px;padding:4px;border-radius:12px;background:var(--well);border:1px solid var(--line)}
+.tabs button{flex:1;padding:9px 4px;border-radius:9px;border:0;background:transparent;font-size:13px;cursor:pointer;color:var(--muted)}
+.tabs button[aria-selected="true"]{background:var(--panel);color:var(--fg)}
+.board-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.board-list li{display:grid;grid-template-columns:32px 1fr auto;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;background:var(--panel)}
+.board-list li.me{outline:2px solid var(--accent)}
+.board-list .rk{font-family:var(--font-display);color:var(--muted);text-align:center}
+.board-list li:nth-child(1) .rk{color:var(--accent)}
+.board-list .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.board-list .sc{font-family:var(--font-display);font-variant-numeric:tabular-nums}
+.empty{padding:22px 12px;border-radius:12px;border:1px dashed var(--line);text-align:center;color:var(--muted);font-size:13px}
+.copy-fallback{width:100%;min-height:70px;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--well);font-size:13px;-webkit-user-select:text;user-select:text}
+@media (prefers-reduced-motion:reduce){.key{transition:none}}
+
+/* Landscape phones: move keys under the HUD on the left, the well in the middle, rotate/drop keys on the right */
+@media (orientation:landscape) and (max-height:520px){
+  #app{max-width:none;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);
+    grid-template-rows:auto minmax(0,1fr);grid-template-areas:"hud play ." "move play act";gap:8px 16px}
+  .hud{grid-area:hud;align-self:start;flex-wrap:wrap}
+  .play{grid-area:play;min-height:0;height:100%}
+  #wellWrap{flex:none;min-height:0;height:100%}
+  .pad{display:contents}
+  .pad .grp{align-self:end;padding-bottom:4px}
+  .pad .grp:first-child{grid-area:move;justify-self:start}
+  .pad .grp:last-child{grid-area:act;justify-self:end}
+  .pad.swap .grp:first-child{grid-area:act;justify-self:end}
+  .pad.swap .grp:last-child{grid-area:move;justify-self:start}
+  .key,.pad.big .key{width:clamp(44px,7vw,64px);height:clamp(48px,14vh,64px)}
+}
+</style>
+
+<div id="app">
+  <header class="hud">
+    <div class="stat main"><span class="lbl" id="l1">SCORE</span><span class="val" id="v1">0</span></div>
+    <div class="stat small"><span class="lbl" id="l2">LEVEL</span><span class="val" id="v2">1</span></div>
+    <div class="stat small"><span class="lbl" id="l3">LINES</span><span class="val" id="v3">0</span></div>
+    <button class="icon-btn" id="pauseBtn" aria-label="一時停止">II</button>
+  </header>
+
+  <div class="play">
+    <div id="wellWrap">
+      <div class="stage" id="stage"><canvas id="board"></canvas></div>
+    </div>
+    <aside class="rail">
+      <button class="box" id="holdBox" aria-label="ホールド"><span class="lbl">HOLD</span><canvas id="hold"></canvas></button>
+      <div class="box"><span class="lbl">NEXT</span><canvas id="next"></canvas></div>
+      <div class="box"><span class="lbl">BEST</span><span class="val" id="best" style="font-size:12px">-</span></div>
+    </aside>
+  </div>
+
+  <footer class="pad" id="pad">
+    <div class="grp">
+      <button class="key" data-act="left" aria-label="左へ"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <button class="key" data-act="down" aria-label="下へ"><svg viewBox="0 0 24 24"><path d="M5 9l7 7 7-7"/></svg></button>
+      <button class="key" data-act="right" aria-label="右へ"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+    </div>
+    <div class="grp">
+      <button class="key" data-act="rotl" aria-label="左回転"><svg viewBox="0 0 24 24"><path d="M4 4v6h6"/><path d="M5.5 14a7 7 0 1 0 1.6-7.1L4 10"/></svg></button>
+      <button class="key" data-act="rotr" aria-label="右回転"><svg viewBox="0 0 24 24"><path d="M20 4v6h-6"/><path d="M18.5 14a7 7 0 1 1-1.6-7.1L20 10"/></svg></button>
+      <button class="key drop" data-act="drop" aria-label="一気に落とす"><svg viewBox="0 0 24 24"><path d="M6 5l6 6 6-6"/><path d="M6 11l6 6 6-6"/><path d="M5 21h14"/></svg></button>
+    </div>
+  </footer>
+</div>
+
+<div class="screen" id="screen"></div>
+
+<script>
+(() => {
+/* ================= constants ================= */
+const COLS = 10, ROWS = 20;
+const SHAPES = {
+  I: [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],
+  J: [[1,0,0],[1,1,1],[0,0,0]],
+  L: [[0,0,1],[1,1,1],[0,0,0]],
+  O: [[1,1],[1,1]],
+  S: [[0,1,1],[1,1,0],[0,0,0]],
+  T: [[0,1,0],[1,1,1],[0,0,0]],
+  Z: [[1,1,0],[0,1,1],[0,0,0]]
+};
+const SKINS = {
+  night: { name:'夜', scheme:'dark',
+    css:{bg:'#141827',well:'#0c0f1c',grid:'#1c2236',panel:'#1d2337',line:'#2c3450',fg:'#ece6d6',muted:'#8e93a8',accent:'#e6c85e','on-accent':'#1a1a12',sheet:'rgba(14,17,30,.96)'},
+    flash:'255,248,225',
+    pieces:{I:'#5fb6c8',J:'#6286d8',L:'#e39a52',O:'#e6c85e',S:'#7fc06d',T:'#ab7bcc',Z:'#dc666d'} },
+  washi: { name:'和紙', scheme:'light',
+    css:{bg:'#ece5d6',well:'#f8f4ea',grid:'#e4dccb',panel:'#f7f2e7',line:'#cdc3ad',fg:'#2a2620',muted:'#7a715f',accent:'#a83f2c','on-accent':'#fff8ee',sheet:'rgba(236,229,214,.97)'},
+    flash:'255,255,255',
+    pieces:{I:'#4f93a8',J:'#3f5e9e',L:'#c77a3a',O:'#c9a43a',S:'#5f9a52',T:'#87609f',Z:'#b5442e'} },
+  sea: { name:'深海', scheme:'dark',
+    css:{bg:'#0f2a2e',well:'#0a1d20',grid:'#16363a',panel:'#15383d',line:'#245154',fg:'#e3f1ec',muted:'#87a9a3',accent:'#f0a868','on-accent':'#20140a',sheet:'rgba(9,28,31,.96)'},
+    flash:'220,255,250',
+    pieces:{I:'#7dd3d8',J:'#7b9de8',L:'#f0a868',O:'#f2d675',S:'#8fd694',T:'#c39be6',Z:'#ef8a8a'} }
+};
+const MODES = {
+  marathon: { name:'マラソン', desc:'レベルが上がり続ける。どこまで積めるか', unit:'score' },
+  sprint:   { name:'40ライン', desc:'40ラインを消すまでのタイムを競う', unit:'time' },
+  ultra:    { name:'2分スコア', desc:'2分間でどれだけ点を取れるか', unit:'score' }
+};
+const SPRINT_LINES = 40, ULTRA_MS = 120000;
+const LOCK_DELAY = 500, MAX_LOCK_RESETS = 15, CLEAR_MS = 260, COUNTDOWN_MS = 1800;
+
+/* ================= storage helpers ================= */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+};
+const DEFAULT_SETTINGS = { sfx:true, bgm:true, vib:true, ghost:true, sens:'mid', swap:false, bigKeys:false, skin:'night', startLevel:1 };
+let settings = Object.assign({}, DEFAULT_SETTINGS, store.get('blockdrop-settings', {}));
+let bests = Object.assign({ marathon:0, sprint:0, ultra:0 }, store.get('blockdrop-bests', {}));
+{ const old = store.get('blockdrop-best', 0); if (old && !bests.marathon) bests.marathon = +old || 0; }
+let nickname = store.get('blockdrop-name', '');
+/* this device's top 10 per mode — works with no sign-in */
+let localBoard = Object.assign({ marathon: [], sprint: [], ultra: [] }, store.get('blockdrop-local', {}));
+for (const k of ['marathon', 'sprint', 'ultra']) {
+  if (!Array.isArray(localBoard[k])) localBoard[k] = [];
+  if (!localBoard[k].length && bests[k]) localBoard[k].push({ name: nickname || 'あなた', v: bests[k], at: 0 });
+}
+function sortRecs(m, arr) { return arr.sort((a, b) => m === 'sprint' ? a.v - b.v : b.v - a.v); }
+function addLocal(m, v) {
+  const at = Date.now();
+  const list = sortRecs(m, localBoard[m].concat([{ name: nickname || 'ななし', v, at }])).slice(0, 10);
+  localBoard[m] = list; store.set('blockdrop-local', localBoard);
+  const i = list.findIndex(e => e.at === at);
+  return { rank: i < 0 ? null : i + 1, at };
+}
+function renameLocal(at, name) {
+  if (!at) return;
+  for (const k in localBoard) localBoard[k].forEach(e => { if (e.at === at) e.name = name; });
+  store.set('blockdrop-local', localBoard);
+}
+
+/* ================= DOM ================= */
+const $ = id => document.getElementById(id);
+const boardC = $('board'), bx = boardC.getContext('2d');
+const holdC = $('hold'), hx = holdC.getContext('2d');
+const nextC = $('next'), nx = nextC.getContext('2d');
+const stage = $('stage'), screenEl = $('screen');
+const dpr = Math.min(window.devicePixelRatio || 1, 3);
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const LAND = matchMedia('(orientation: landscape) and (max-height: 520px)');
+/* keep the screen on during play where the phone allows it */
+let wake = null;
+async function requestWake() {
+  try {
+    if (!wake && navigator.wakeLock && navigator.wakeLock.request) {
+      wake = await navigator.wakeLock.request('screen');
+      wake.addEventListener('release', () => { wake = null; });
+    }
+  } catch (e) { wake = null; }
+}
+let cell = 24;
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtTime = ms => { ms = Math.max(0, ms); const m = Math.floor(ms / 60000), s = Math.floor(ms / 1000) % 60, c = Math.floor(ms / 10) % 100;
+  return `${m}:${String(s).padStart(2,'0')}.${String(c).padStart(2,'0')}`; };
+const fmtNum = n => Math.round(n).toLocaleString();
+const fmtRecord = (mode, v) => !v ? '-' : MODES[mode].unit === 'time' ? fmtTime(v) : fmtNum(v);
+
+/* ================= sound ================= */
+const Snd = {
+  ctx: null, sfx: null, music: null, noiseBuf: null, timer: null, step: 0, nextT: 0,
+  init() {
+    if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      this.ctx = new AC();
+      const master = this.ctx.createGain(); master.gain.value = 0.8; master.connect(this.ctx.destination);
+      this.sfx = this.ctx.createGain(); this.sfx.connect(master);
+      this.music = this.ctx.createGain(); this.music.gain.value = 0.45; this.music.connect(master);
+      const len = this.ctx.sampleRate * 0.4, buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      this.noiseBuf = buf;
+    } catch (e) { this.ctx = null; }
+  },
+  tone(freq, dur, type = 'square', vol = 0.15, when = 0, slide = null, dest = null) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + when, o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    if (slide) o.frequency.exponentialRampToValueAtTime(slide, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(dest || this.sfx); o.start(t); o.stop(t + dur + 0.02);
+  },
+  noise(dur, vol = 0.2, when = 0, freq = 1200, dest = null) {
+    if (!this.ctx || !this.noiseBuf) return;
+    const t = this.ctx.currentTime + when, s = this.ctx.createBufferSource(), f = this.ctx.createBiquadFilter(), g = this.ctx.createGain();
+    s.buffer = this.noiseBuf; f.type = 'lowpass'; f.frequency.value = freq;
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(f); f.connect(g); g.connect(dest || this.sfx); s.start(t); s.stop(t + dur + 0.02);
+  },
+  play(name, n) {
+    if (!settings.sfx || !this.ctx) return;
+    const T = (...a) => this.tone(...a);
+    switch (name) {
+      case 'move': T(330, .035, 'square', .04); break;
+      case 'rotate': T(520, .06, 'triangle', .12, 0, 780); break;
+      case 'lock': T(120, .09, 'triangle', .22); break;
+      case 'hard': this.noise(.12, .25, 0, 900); T(110, .14, 'sine', .35, 0, 45); break;
+      case 'hold': T(523, .07, 'sine', .14); T(784, .09, 'sine', .14, .05); break;
+      case 'clear': [523,659,784,988].slice(0, n).forEach((f, i) => T(f, .12, 'square', .08, i * .045)); break;
+      case 'quad': [523,659,784,1047,1319].forEach((f, i) => T(f, .16, 'square', .09, i * .05)); this.noise(.3, .08, .2, 6000); break;
+      case 'tspin': T(300, .18, 'sawtooth', .07, 0, 900); T(900, .16, 'triangle', .1, .12, 1400); break;
+      case 'allclear': [784,988,1175,1568,1976].forEach((f, i) => T(f, .2, 'triangle', .12, i * .07)); break;
+      case 'level': [440,554,659,880].forEach((f, i) => T(f, .1, 'square', .07, i * .06)); break;
+      case 'over': [392,330,262,196].forEach((f, i) => T(f, .25, 'triangle', .16, i * .16)); break;
+      case 'finish': [523,659,784,1047,784,1047].forEach((f, i) => T(f, .14, 'square', .08, i * .08)); break;
+      case 'count': T(660, .09, 'square', .1); break;
+      case 'go': T(990, .2, 'square', .1); break;
+    }
+  },
+  /* BGM: an original 8-bar loop in A minor — square lead, triangle bass, soft hats */
+  MEL: [76,-1,72,74, 76,74,72,69,  71,-1,-1,72, 74,-1,69,-1,  72,-1,74,76, 79,-1,76,74,  76,-1,-1,-1, 0,0,0,0,
+        81,-1,79,76, 77,76,74,72,  74,-1,72,71, 72,-1,69,-1,  71,72,74,76, 74,72,71,67,  69,-1,-1,-1, 0,0,0,0],
+  ROOTS: [45,43,41,40,41,38,40,45],
+  bpm: 132,
+  startMusic() {
+    if (!this.ctx || !settings.bgm || this.timer) return;
+    this.nextT = this.ctx.currentTime + 0.08;
+    this.timer = setInterval(() => this.schedule(), 25);
+  },
+  stopMusic() { clearInterval(this.timer); this.timer = null; },
+  resetMusic() { this.stopMusic(); this.step = 0; },
+  schedule() {
+    const c = this.ctx; if (!c) return;
+    const e = 60 / this.bpm / 2;
+    while (this.nextT < c.currentTime + 0.15) {
+      const i = this.step % 64, when = this.nextT - c.currentTime;
+      const m = this.MEL[i];
+      if (m > 0) { let len = 1; while (this.MEL[(i + len) % 64] === -1) len++;
+        this.tone(440 * Math.pow(2, (m - 69) / 12), e * len * 0.92, 'square', 0.05, when, null, this.music); }
+      const root = this.ROOTS[Math.floor(i / 8)], bassSeq = [0, 12, 7, 12, 0, 12, 7, 10];
+      this.tone(440 * Math.pow(2, (root + bassSeq[i % 8] - 69) / 12), e * 0.85, 'triangle', 0.16, when, null, this.music);
+      if (i % 2 === 1) this.noise(0.03, 0.05, when, 7000, this.music);
+      this.nextT += e; this.step++;
+    }
+  }
+};
+
+function buzz(ms) { if (!settings.vib) return; try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} }
+
+/* ================= game state ================= */
+let grid = null, cur = null, queue = [], holdP = null, canHold = true;
+let score = 0, lines = 0, level = 1, pieces = 0, elapsed = 0, mode = 'marathon';
+let state = 'title'; // title | countdown | play | clearing | pause | over
+let dropAcc = 0, lockT = 0, lockResets = 0, clearRows = [], clearT = 0, countT = 0, lastCount = -1;
+let lastWasRotate = false, combo = -1, b2b = false, stats = null;
+let popups = [], particles = [], shakeT = 0, shakeMag = 0;
+let colors = SKINS.night.pieces;
+
+function newBag() {
+  const b = [...'IJLOSTZ'];
+  for (let i = b.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [b[i], b[j]] = [b[j], b[i]]; }
+  return b;
+}
+function takeNext() { while (queue.length < 7) queue.push(...newBag()); return queue.shift(); }
+
+function collide(m, x, y) {
+  for (let r = 0; r < m.length; r++) for (let c = 0; c < m[r].length; c++) {
+    if (!m[r][c]) continue;
+    const X = x + c, Y = y + r;
+    if (X < 0 || X >= COLS || Y >= ROWS) return true;
+    if (Y >= 0 && grid[Y][X]) return true;
+  }
+  return false;
+}
+function filledAt(x, y) { return x < 0 || x >= COLS || y >= ROWS || (y >= 0 && !!grid[y][x]); }
+
+function spawn(t) {
+  const m = SHAPES[t].map(r => r.slice());
+  cur = { t, m, rot: 0, x: Math.floor((COLS - m[0].length) / 2), y: t === 'I' ? -1 : 0 };
+  dropAcc = 0; lockT = 0; lockResets = 0; lastWasRotate = false;
+  if (collide(cur.m, cur.x, cur.y)) endGame(false);
+}
+const grounded = () => collide(cur.m, cur.x, cur.y + 1);
+function touched() { if (grounded() && lockResets < MAX_LOCK_RESETS) { lockT = 0; lockResets++; } }
+
+function move(dx) {
+  if (state !== 'play' || !cur) return false;
+  if (!collide(cur.m, cur.x + dx, cur.y)) { cur.x += dx; lastWasRotate = false; touched(); Snd.play('move'); return true; }
+  return false;
+}
+function rotate(dir) {
+  if (state !== 'play' || !cur || cur.t === 'O') return;
+  const n = cur.m.length, m2 = [];
+  for (let r = 0; r < n; r++) { m2.push([]); for (let c = 0; c < n; c++)
+    m2[r][c] = dir > 0 ? cur.m[n - 1 - c][r] : cur.m[c][n - 1 - r]; }
+  const kicks = [[0,0],[-dir,0],[dir,0],[0,-1],[-dir,-1],[dir,-1],[0,1],[-dir,1],[-2*dir,0],[2*dir,0]];
+  for (const [kx, ky] of kicks) {
+    if (!collide(m2, cur.x + kx, cur.y + ky)) {
+      cur.m = m2; cur.x += kx; cur.y += ky; cur.rot = (cur.rot + dir + 4) % 4;
+      lastWasRotate = true; touched(); Snd.play('rotate'); return;
+    }
+  }
+}
+function softDrop() {
+  if (state !== 'play' || !cur) return false;
+  if (!grounded()) { cur.y++; score++; dropAcc = 0; lastWasRotate = false; return true; }
+  return false;
+}
+function hardDrop() {
+  if (state !== 'play' || !cur) return;
+  let n = 0; while (!grounded()) { cur.y++; n++; }
+  if (n) lastWasRotate = false;
+  score += n * 2;
+  // dust under the piece
+  cur.m.forEach((row, r) => row.forEach((v, c) => {
+    if (v && (r + 1 >= row.length || !cur.m[r + 1] || !cur.m[r + 1][c])) for (let k = 0; k < 2; k++)
+      particles.push({ x: (cur.x + c + Math.random()) * cell, y: (cur.y + r + 1) * cell, vx: (Math.random() - .5) * 60, vy: -Math.random() * 60,
+        life: .35, max: .35, color: colors[cur.t], size: cell * .12 });
+  }));
+  shake(n > 2 ? 3 : 1.5, 120);
+  Snd.play('hard'); buzz(12);
+  lock(true);
+}
+function hold() {
+  if (state !== 'play' || !cur || !canHold) return;
+  const t = cur.t;
+  if (holdP) { const h = holdP; holdP = t; spawn(h); } else { holdP = t; spawn(takeNext()); }
+  canHold = false; Snd.play('hold'); drawSide();
+}
+
+function tSpinType() {
+  if (cur.t !== 'T' || !lastWasRotate) return null;
+  const x = cur.x, y = cur.y;
+  const C = [[x, y], [x + 2, y], [x + 2, y + 2], [x, y + 2]]; // TL TR BR BL
+  const filled = C.map(([a, b]) => filledAt(a, b));
+  const count = filled.filter(Boolean).length;
+  if (count < 3) return null;
+  const front = [[0, 1], [1, 2], [2, 3], [3, 0]][cur.rot];
+  return filled[front[0]] && filled[front[1]] ? 'full' : 'mini';
+}
+
+function lock(hard) {
+  const ts = tSpinType();
+  let above = false;
+  cur.m.forEach((row, r) => row.forEach((v, c) => {
+    if (!v) return; const Y = cur.y + r;
+    if (Y < 0) above = true; else grid[Y][cur.x + c] = cur.t;
+  }));
+  if (!hard) Snd.play('lock');
+  pieces++;
+  if (above) { cur = null; endGame(false); return; }
+  canHold = true;
+  clearRows = [];
+  for (let r = 0; r < ROWS; r++) if (grid[r].every(Boolean)) clearRows.push(r);
+  const n = clearRows.length;
+
+  /* ---- scoring ---- */
+  const lv = level;
+  let pts = 0, title = '', difficult = false;
+  const NAMES = ['', 'SINGLE', 'DOUBLE', 'TRIPLE', 'QUAD'];
+  if (ts) {
+    pts = ts === 'mini' ? [100, 200, 400][Math.min(n, 2)] : [400, 800, 1200, 1600][n];
+    title = (ts === 'mini' ? 'T-SPIN MINI' : 'T-SPIN') + (n ? ' ' + NAMES[n] : '');
+    difficult = n > 0; stats.tspins++;
+  } else if (n) {
+    pts = [0, 100, 300, 500, 800][n]; title = NAMES[n]; difficult = n === 4;
+    if (n === 4) stats.quads++;
+  }
+  const extra = [];
+  if (n) {
+    if (difficult && b2b) { pts *= 1.5; extra.push('BACK-TO-BACK'); }
+    b2b = difficult;
+    combo++;
+    if (combo > 0) { pts += 50 * combo; extra.push(combo + ' COMBO'); stats.maxCombo = Math.max(stats.maxCombo, combo); }
+    const rest = grid.filter((_, i) => !clearRows.includes(i));
+    if (rest.every(r => r.every(v => !v))) { pts += [0, 800, 1200, 1800, 2000][n]; extra.unshift('ALL CLEAR'); stats.allClears++; }
+  } else combo = -1;
+  score += Math.round(pts * lv);
+
+  if (title && (ts || n >= 2 || n === 1)) {
+    if (ts || n === 4) addPopup(title, true);
+    else if (n >= 2) addPopup(title, false);
+  }
+  extra.forEach(t => addPopup(t, t === 'ALL CLEAR'));
+
+  cur = null;
+  if (n) {
+    state = 'clearing'; clearT = 0;
+    const pal = colors;
+    for (const r of clearRows) for (let c = 0; c < COLS; c++) for (let k = 0; k < 2; k++)
+      particles.push({ x: (c + .5) * cell, y: (r + .5) * cell, vx: (Math.random() - .5) * 260, vy: -Math.random() * 220 - 40,
+        life: .7, max: .7, color: pal[grid[r][c]] || '#fff', size: cell * (.15 + Math.random() * .15) });
+    if (extra.includes('ALL CLEAR')) Snd.play('allclear');
+    else if (ts) Snd.play('tspin');
+    else if (n === 4) Snd.play('quad');
+    else Snd.play('clear', n);
+    shake(n === 4 || ts ? 5 : 2, n === 4 || ts ? 260 : 140);
+    buzz(n >= 4 || ts ? 45 : 18);
+  } else {
+    if (ts) Snd.play('tspin');
+    spawn(takeNext()); drawSide();
+  }
+  updateHud();
+}
+function finishClear() {
+  const n = clearRows.length;
+  grid = grid.filter((_, i) => !clearRows.includes(i));
+  while (grid.length < ROWS) grid.unshift(Array(COLS).fill(0));
+  lines += n; clearRows = [];
+  const before = level;
+  if (mode === 'marathon') level = settings.startLevel + Math.floor(lines / 10);
+  else if (mode === 'ultra') level = 1 + Math.floor(lines / 10);
+  if (level > before) { addPopup('LEVEL ' + level, false); Snd.play('level'); }
+  Snd.bpm = Math.min(176, 132 + (level - 1) * 3);
+  if (mode === 'sprint' && lines >= SPRINT_LINES) { lines = SPRINT_LINES; endGame(true); return; }
+  state = 'play';
+  spawn(takeNext()); drawSide(); updateHud();
+}
+const gravity = l => Math.max(20, 1000 * Math.pow(Math.max(0.05, 0.8 - (l - 1) * 0.007), l - 1));
+
+function addPopup(text, big) { popups.push({ text, big, t: 0 }); if (popups.length > 4) popups.shift(); }
+function shake(mag, ms) { if (reduceMotion) return; shakeMag = Math.max(shakeMag, mag); shakeT = Math.max(shakeT, ms); }
+
+function update(dt) {
+  // effects run in every state
+  for (const p of particles) { p.life -= dt / 1000; p.x += p.vx * dt / 1000; p.y += p.vy * dt / 1000; p.vy += 600 * dt / 1000; }
+  particles = particles.filter(p => p.life > 0);
+  for (const p of popups) p.t += dt;
+  popups = popups.filter(p => p.t < 1300);
+  if (shakeT > 0) {
+    shakeT -= dt;
+    const m = shakeMag * Math.max(0, shakeT) / 200;
+    stage.style.transform = shakeT > 0 ? `translate(${(Math.random() - .5) * m}px,${(Math.random() - .5) * m}px)` : '';
+    if (shakeT <= 0) shakeMag = 0;
+  }
+
+  if (state === 'countdown') {
+    countT += dt;
+    const k = Math.floor(countT / (COUNTDOWN_MS / 3));
+    if (k !== lastCount && k < 3) { lastCount = k; Snd.play('count'); }
+    if (countT >= COUNTDOWN_MS) { state = 'play'; Snd.play('go'); addPopup('GO!', true); spawn(takeNext()); drawSide(); Snd.startMusic(); }
+    return;
+  }
+  if (state === 'clearing') { elapsed += dt; clearT += dt; if (clearT >= CLEAR_MS) finishClear(); checkTimer(); return; }
+  if (state !== 'play' || !cur) return;
+  elapsed += dt;
+  if (checkTimer()) return;
+  if (grounded()) {
+    lockT += dt;
+    if (lockT >= LOCK_DELAY) lock(false);
+    return;
+  }
+  dropAcc += dt;
+  const g = gravity(level);
+  while (dropAcc >= g) { dropAcc -= g; if (!grounded()) { cur.y++; lastWasRotate = false; } else break; }
+}
+let hudTick = 0;
+function checkTimer() {
+  if (mode === 'ultra' && elapsed >= ULTRA_MS) { elapsed = ULTRA_MS; endGame(true); return true; }
+  return false;
+}
+
+/* ================= drawing ================= */
+function shade(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  const f = v => Math.max(0, Math.min(255, Math.round(amt > 0 ? v + (255 - v) * amt : v * (1 + amt))));
+  return `rgb(${f(n >> 16)},${f(n >> 8 & 255)},${f(n & 255)})`;
+}
+function block(ctx, x, y, s, color) {
+  const b = Math.max(2, Math.round(s * 0.14));
+  ctx.fillStyle = color; ctx.fillRect(x, y, s, s);
+  ctx.fillStyle = shade(color, 0.32); ctx.fillRect(x, y, s, b); ctx.fillRect(x, y, b, s);
+  ctx.fillStyle = shade(color, -0.3); ctx.fillRect(x, y + s - b, s, b); ctx.fillRect(x + s - b, y, b, s);
+}
+function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue('--' + n).trim(); }
+let pal = {};
+function readPalette() { pal = { well: cssVar('well'), grid: cssVar('grid'), fg: cssVar('fg'), accent: cssVar('accent'), bg: cssVar('bg') }; }
+
+function draw() {
+  const s = cell, W = COLS * s, H = ROWS * s;
+  bx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  bx.fillStyle = pal.well; bx.fillRect(0, 0, W, H);
+  bx.strokeStyle = pal.grid; bx.lineWidth = 1; bx.beginPath();
+  for (let c = 1; c < COLS; c++) { bx.moveTo(c * s + .5, 0); bx.lineTo(c * s + .5, H); }
+  for (let r = 1; r < ROWS; r++) { bx.moveTo(0, r * s + .5); bx.lineTo(W, r * s + .5); }
+  bx.stroke();
+  if (grid) {
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++)
+      if (grid[r][c]) block(bx, c * s, r * s, s, colors[grid[r][c]]);
+    if (state === 'clearing') {
+      const p = clearT / CLEAR_MS, flash = SKINS[settings.skin].flash;
+      bx.fillStyle = `rgba(${flash},${0.95 * (1 - p)})`;
+      for (const r of clearRows) bx.fillRect(p * W / 2, r * s, W * (1 - p), s);
+    }
+    if (cur) {
+      let gy = cur.y; while (!collide(cur.m, cur.x, gy + 1)) gy++;
+      if (settings.ghost && gy !== cur.y) {
+        bx.strokeStyle = colors[cur.t]; bx.globalAlpha = 0.6; bx.lineWidth = 2;
+        cur.m.forEach((row, r) => row.forEach((v, c) => {
+          if (v && gy + r >= 0) bx.strokeRect((cur.x + c) * s + 2, (gy + r) * s + 2, s - 4, s - 4);
+        }));
+      }
+      bx.globalAlpha = grounded() ? 1 - Math.min(lockT / LOCK_DELAY, 1) * 0.35 : 1;
+      cur.m.forEach((row, r) => row.forEach((v, c) => {
+        if (v && cur.y + r >= 0) block(bx, (cur.x + c) * s, (cur.y + r) * s, s, colors[cur.t]);
+      }));
+      bx.globalAlpha = 1;
+    }
+  }
+  for (const p of particles) {
+    bx.globalAlpha = Math.max(0, p.life / p.max);
+    bx.fillStyle = p.color; bx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  bx.globalAlpha = 1;
+  bx.textAlign = 'center'; bx.textBaseline = 'middle';
+  if (state === 'countdown') {
+    const k = 3 - Math.floor(countT / (COUNTDOWN_MS / 3));
+    const ph = (countT % (COUNTDOWN_MS / 3)) / (COUNTDOWN_MS / 3);
+    bx.font = `${Math.round(s * (3.2 - ph))}px ${getComputedStyle(document.body).getPropertyValue('--font-display')}`;
+    bx.fillStyle = pal.accent; bx.globalAlpha = 1 - ph * 0.6;
+    bx.fillText(String(Math.max(1, k)), W / 2, H * 0.42);
+    bx.globalAlpha = 1;
+  }
+  const fontFam = cssVar('font-display');
+  popups.forEach((p, i) => {
+    const a = p.t < 150 ? p.t / 150 : p.t > 1000 ? 1 - (p.t - 1000) / 300 : 1;
+    const y = H * 0.3 + i * s * 1.4 - (p.t / 1300) * s * 0.8;
+    const size = p.big ? Math.min(s * 1.25, W / (p.text.length * 0.62)) : Math.min(s * 0.85, W / (p.text.length * 0.62));
+    bx.font = `${Math.round(size)}px ${fontFam}`;
+    bx.globalAlpha = Math.max(0, a);
+    bx.lineWidth = Math.max(3, size / 5); bx.strokeStyle = pal.well; bx.strokeText(p.text, W / 2, y);
+    bx.fillStyle = p.big ? pal.accent : pal.fg; bx.fillText(p.text, W / 2, y);
+  });
+  bx.globalAlpha = 1;
+}
+function drawMini(ctx, t, cx, cy, s, dim) {
+  if (!t) return;
+  const cells = [];
+  SHAPES[t].forEach((row, r) => row.forEach((v, c) => v && cells.push([c, r])));
+  const xs = cells.map(p => p[0]), ys = cells.map(p => p[1]);
+  const w = Math.max(...xs) - Math.min(...xs) + 1, h = Math.max(...ys) - Math.min(...ys) + 1;
+  const ox = cx - w * s / 2 - Math.min(...xs) * s, oy = cy - h * s / 2 - Math.min(...ys) * s;
+  ctx.globalAlpha = dim ? 0.35 : 1;
+  cells.forEach(([c, r]) => block(ctx, ox + c * s, oy + r * s, s, colors[t]));
+  ctx.globalAlpha = 1;
+}
+const MINI_W = 50, MINI_H = 36;
+function setupMini() {
+  holdC.width = MINI_W * dpr; holdC.height = MINI_H * dpr;
+  holdC.style.width = MINI_W + 'px'; holdC.style.height = MINI_H + 'px';
+  nextC.width = MINI_W * dpr; nextC.height = MINI_H * 3 * dpr;
+  nextC.style.width = MINI_W + 'px'; nextC.style.height = MINI_H * 3 + 'px';
+}
+function drawSide() {
+  hx.setTransform(dpr, 0, 0, dpr, 0, 0); hx.clearRect(0, 0, MINI_W, MINI_H);
+  nx.setTransform(dpr, 0, 0, dpr, 0, 0); nx.clearRect(0, 0, MINI_W, MINI_H * 3);
+  drawMini(hx, holdP, MINI_W / 2, MINI_H / 2, 10, !canHold);
+  for (let i = 0; i < 3; i++) drawMini(nx, queue[i], MINI_W / 2, MINI_H * i + MINI_H / 2, i ? 8 : 10);
+}
+function setHud(l1, l2, l3) { $('l1').textContent = l1; $('l2').textContent = l2; $('l3').textContent = l3; }
+function updateHud() {
+  if (mode === 'marathon') { $('v1').textContent = fmtNum(score); $('v2').textContent = level; $('v3').textContent = lines; }
+  else if (mode === 'sprint') { $('v1').textContent = fmtTime(elapsed); $('v2').textContent = Math.max(0, SPRINT_LINES - lines); $('v3').textContent = pieces; }
+  else { $('v1').textContent = fmtNum(score); $('v2').textContent = fmtTime(ULTRA_MS - elapsed).slice(0, -3); $('v3').textContent = lines; }
+  $('best').textContent = fmtRecord(mode, bests[mode]);
+}
+function resize() {
+  const wrap = $('wellWrap');
+  const w = LAND.matches ? Infinity : wrap.clientWidth - 4, h = wrap.clientHeight - 4;
+  cell = Math.max(10, Math.floor(Math.min(w / COLS, h / ROWS)));
+  boardC.width = COLS * cell * dpr; boardC.height = ROWS * cell * dpr;
+  boardC.style.width = COLS * cell + 'px'; boardC.style.height = ROWS * cell + 'px';
+  draw();
+}
+
+/* ================= settings application ================= */
+function applySettings() {
+  const sk = SKINS[settings.skin] || SKINS.night;
+  const root = document.documentElement;
+  for (const [k, v] of Object.entries(sk.css)) root.style.setProperty('--' + k, v);
+  root.style.colorScheme = sk.scheme;
+  colors = sk.pieces;
+  $('pad').classList.toggle('swap', !!settings.swap);
+  $('pad').classList.toggle('big', !!settings.bigKeys);
+  if (!settings.bgm) Snd.stopMusic(); else if (state === 'play' || state === 'clearing') Snd.startMusic();
+  readPalette();
+  store.set('blockdrop-settings', settings);
+  requestAnimationFrame(resize);
+  drawSide();
+}
+
+/* ================= flow ================= */
+function newGame(m) {
+  Snd.init();
+  mode = m || mode;
+  grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+  queue = []; holdP = null; canHold = true; cur = null;
+  score = 0; lines = 0; pieces = 0; elapsed = 0;
+  level = mode === 'marathon' ? settings.startLevel : 1;
+  combo = -1; b2b = false; popups = []; particles = [];
+  stats = { tspins: 0, quads: 0, maxCombo: 0, allClears: 0 };
+  Snd.bpm = Math.min(176, 132 + (level - 1) * 3); Snd.resetMusic();
+  if (mode === 'marathon') setHud('SCORE', 'LEVEL', 'LINES');
+  else if (mode === 'sprint') setHud('TIME', 'LEFT', 'PIECES');
+  else setHud('SCORE', 'TIME', 'LINES');
+  for (let i = 0; i < 7; i++) takeNext();
+  state = 'countdown'; countT = 0; lastCount = -1;
+  hideScreen(); drawSide(); updateHud(); requestWake();
+}
+let lastResult = null;
+function endGame(finished) {
+  if (state === 'over') return;
+  state = 'over'; cur = null; Snd.stopMusic();
+  const failedSprint = mode === 'sprint' && !finished;
+  const value = mode === 'sprint' ? (failedSprint ? 0 : Math.round(elapsed)) : score;
+  let isBest = false;
+  if (value) {
+    const prev = bests[mode];
+    isBest = mode === 'sprint' ? (!prev || value < prev) : value > prev;
+    if (isBest) { bests[mode] = value; store.set('blockdrop-bests', bests); }
+  }
+  const loc = value ? addLocal(mode, value) : { rank: null, at: 0 };
+  lastResult = { mode, value, finished, failedSprint, isBest, score, lines, level, time: elapsed, pieces, stats: Object.assign({}, stats), rank: null, submitted: false,
+    localRank: loc.rank, localAt: loc.at };
+  Snd.play(finished ? 'finish' : 'over'); buzz(finished ? 30 : 80);
+  updateHud();
+  setTimeout(() => { showResult(); autoSubmit(); }, finished ? 500 : 700);
+}
+function pause() {
+  if (state !== 'play' && state !== 'clearing' && state !== 'countdown') return;
+  pausedFrom = state; state = 'pause'; Snd.stopMusic(); showPause();
+}
+let pausedFrom = 'play';
+function resume() {
+  state = pausedFrom; hideScreen(); last = performance.now(); requestWake();
+  if (state !== 'countdown') Snd.startMusic();
+}
+
+/* ================= screens ================= */
+let screenName = null, settingsReturn = 'title', rankTab = 'marathon', rankScope = null;
+function showScreen(name, html) { screenName = name; screenEl.innerHTML = `<div class="sheet">${html}</div>`; screenEl.hidden = false; screenEl.scrollTop = 0; }
+function hideScreen() { screenName = null; screenEl.hidden = true; screenEl.innerHTML = ''; }
+
+function showTitle() {
+  state = 'title'; Snd.stopMusic();
+  const modeBtns = Object.entries(MODES).map(([k, m]) =>
+    `<button class="mode" data-go="mode:${k}"><b>${m.name}</b><small>${m.desc}</small>
+      <span class="pb"><span>BEST</span>${fmtRecord(k, bests[k])}</span></button>`).join('');
+  showScreen('title', `
+    <h1>ブロックドロップ</h1>
+    <p class="sub">サインイン不要。遊ぶモードを選んでください</p>
+    <div class="modes">${modeBtns}</div>
+    <div class="row"><button class="btn" data-go="rank">ランキング</button><button class="btn" data-go="settings">設定</button></div>
+    <dl class="how">
+      <dt>タップ</dt><dd>盤面の右側で右回転、左側で左回転</dd>
+      <dt>左右スワイプ</dt><dd>ブロックを移動</dd>
+      <dt>下へなぞる</dt><dd>ゆっくり落とす</dd>
+      <dt>下へはじく</dt><dd>一気に落とす</dd>
+      <dt>上へはじく</dt><dd>ホールド（HOLD枠のタップでも可）</dd>
+    </dl>
+    <p class="note">Tスピン・連続消し・4ライン消し・全消しにはボーナス点があります。スマホを横向きにしても遊べます。</p>`);
+}
+function showPause() {
+  showScreen('pause', `
+    <h2 style="text-align:center;margin-top:24px">一時停止</h2>
+    <p class="sub">${MODES[mode].name}</p>
+    <button class="cta" data-go="resume">再開</button>
+    <div class="row"><button class="btn" data-go="restart">やり直す</button><button class="btn" data-go="settings">設定</button></div>
+    <button class="btn" data-go="title">タイトルへ</button>`);
+}
+const SETTINGS_SCHEMA = [
+  { key:'sfx', label:'効果音', opts:[[true,'オン'],[false,'オフ']] },
+  { key:'bgm', label:'BGM', opts:[[true,'オン'],[false,'オフ']] },
+  { key:'vib', label:'振動（Androidのみ）', opts:[[true,'オン'],[false,'オフ']] },
+  { key:'ghost', label:'着地位置の表示', opts:[[true,'表示'],[false,'非表示']] },
+  { key:'sens', label:'スワイプ感度', opts:[['low','低'],['mid','中'],['high','高']] },
+  { key:'swap', label:'ボタン配置', opts:[[false,'移動を左に'],[true,'移動を右に']] },
+  { key:'bigKeys', label:'ボタンの大きさ', opts:[[false,'標準'],[true,'大きく']] },
+  { key:'skin', label:'テーマ', opts:Object.entries(SKINS).map(([k, s]) => [k, s.name]) },
+  { key:'startLevel', label:'開始レベル（マラソン）', opts:[[1,'1'],[5,'5'],[10,'10'],[15,'15']] }
+];
+function showSettings(from) {
+  if (from) settingsReturn = from;
+  const rows = SETTINGS_SCHEMA.map(s => `<div class="setting"><span class="lbl">${s.label}</span><div class="seg">` +
+    s.opts.map(([v, l], i) => `<button data-set="${s.key}" data-idx="${i}" aria-pressed="${settings[s.key] === v}">${l}</button>`).join('') +
+    `</div></div>`).join('');
+  showScreen('settings', `<h2>設定</h2>${rows}
+    <p class="note">iPhoneはマナーモード（消音）中だと音が出ません。音を出すときはマナーモードを解除してください。</p>
+    <button class="cta" data-go="back">戻る</button>`);
+}
+
+/* ---------- leaderboard ---------- */
+const lb = { db: null, uid: null, docs: new Map(), status: 'connecting', readOnly: false, writeChain: Promise.resolve() };
+async function initLeaderboard() {
+  if (!window.claude || typeof window.claude.use !== 'function') { lb.status = 'offline'; refreshRank(); return; }
+  try {
+    const [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
+    if (!db) { lb.status = 'offline'; refreshRank(); return; }
+    lb.db = db;
+    if (user) {
+      lb.uid = await user.id();
+      const can = await user.can('data.write');
+      if (can === false) lb.readOnly = true;
+    }
+    if (!lb.uid) lb.readOnly = true;
+    lb.status = 'live';
+    db.collection('scores').onSnapshot(snap => {
+      lb.docs = new Map();
+      snap.docs.forEach(d => { const v = d.data(); if (v && typeof v === 'object') lb.docs.set(d.id, v); });
+      refreshRank();
+    }, () => { lb.status = 'offline'; refreshRank(); });
+  } catch (e) { lb.status = 'offline'; refreshRank(); }
+}
+function entriesFor(m) {
+  const out = [];
+  for (const [id, d] of lb.docs) {
+    const rec = d[m]; if (!rec || typeof rec !== 'object') continue;
+    const v = Number(rec.v); if (!Number.isFinite(v) || v <= 0) continue;
+    out.push({ id, name: String(d.name || 'ななし').slice(0, 12), v });
+  }
+  out.sort((a, b) => MODES[m].unit === 'time' ? a.v - b.v : b.v - a.v);
+  return out;
+}
+function rankOf(m, uid) { const i = entriesFor(m).findIndex(e => e.id === uid); return i < 0 ? null : i + 1; }
+
+function lbNote() {
+  if (lb.status === 'offline') return 'みんなのランキングは、claude.aiにサインインすると使えます。';
+  if (lb.status === 'connecting') return 'ランキングに接続しています…';
+  if (lb.readOnly) return 'ランキングの閲覧のみできます。登録するには、このページの共有設定で「参加者」以上の権限が必要です。';
+  return '';
+}
+function showRanking(from) {
+  if (from) settingsReturn = from;
+  const online = lb.status === 'live';
+  if (!rankScope) rankScope = online ? 'online' : 'local';
+  if (window.BLOCKDROP_STANDALONE) rankScope = 'local';
+  const scopes = window.BLOCKDROP_STANDALONE ? '' : `<div class="seg">` + [['local', 'この端末'], ['online', 'みんな']].map(([k, l]) =>
+    `<button data-scope="${k}" aria-pressed="${rankScope === k}">${l}</button>`).join('') + `</div>`;
+  /* standalone build: only this device's ranking exists */
+  const tabs = Object.entries(MODES).map(([k, m]) => `<button role="tab" data-tab="${k}" aria-selected="${rankTab === k}">${m.name}</button>`).join('');
+  let items;
+  if (rankScope === 'local') {
+    const list = localBoard[rankTab] || [];
+    items = list.length ? `<ol class="board-list">${list.map((e, i) =>
+        `<li class="${lastResult && lastResult.localAt && e.at === lastResult.localAt ? 'me' : ''}"><span class="rk">${i + 1}</span><span class="nm">${esc(e.name)}</span><span class="sc">${fmtRecord(rankTab, e.v)}</span></li>`).join('')}</ol>`
+      : `<div class="empty">まだ記録がありません。遊ぶと、この端末に上位10件が残ります。</div>`;
+  } else if (online) {
+    const list = entriesFor(rankTab).slice(0, 30);
+    items = list.length ? `<ol class="board-list">${list.map((e, i) =>
+        `<li class="${e.id === lb.uid ? 'me' : ''}"><span class="rk">${i + 1}</span><span class="nm">${esc(e.name)}</span><span class="sc">${fmtRecord(rankTab, e.v)}</span></li>`).join('')}</ol>`
+      : `<div class="empty">まだ記録がありません。最初の1人になりましょう。</div>`;
+  } else {
+    items = `<div class="empty">${lb.status === 'connecting' ? '接続しています…' : 'みんなのランキングは、claude.aiにサインインしている人だけが見られます。<br>サインインしなくても「この端末」のランキングは使えます。'}</div>`;
+  }
+  const note = rankScope === 'online' && online ? lbNote() : '';
+  showScreen('rank', `<h2>ランキング</h2>${scopes}<div class="tabs" role="tablist">${tabs}</div>${items}
+    ${note ? `<p class="note">${note}</p>` : ''}
+    <div class="setting"><span class="lbl">あなたの名前</span><div class="field">
+      <input id="nameInput" maxlength="12" placeholder="ニックネーム（12文字まで）" value="${esc(nickname)}" autocomplete="nickname">
+      <button class="btn" data-go="saveName">保存</button></div></div>
+    <button class="cta" data-go="back">戻る</button>`);
+}
+function refreshRank() {
+  if (screenName === 'rank') { const y = screenEl.scrollTop; const inp = $('nameInput'); const val = inp ? inp.value : null;
+    showRanking(); screenEl.scrollTop = y; if (val != null && $('nameInput')) $('nameInput').value = val; }
+  if (screenName === 'result' && lastResult) updateResultRank();
+}
+function bestRecord(m, a, b) { if (!a) return b; if (!b) return a; return MODES[m].unit === 'time' ? (a.v <= b.v ? a : b) : (a.v >= b.v ? a : b); }
+function submitRecord(m, value) {
+  lb.writeChain = lb.writeChain.then(async () => {
+    if (!lb.db || !lb.uid || lb.readOnly) return 'unavailable';
+    const prev = lb.docs.get(lb.uid) || {};
+    const body = { name: (nickname || 'ななし').slice(0, 12), updatedAt: Date.now() };
+    for (const k of Object.keys(MODES)) {
+      const old = prev[k] && Number.isFinite(Number(prev[k].v)) ? { v: Number(prev[k].v), at: Number(prev[k].at) || 0 } : null;
+      const mine = k === m && value ? { v: value, at: Date.now() } : null;
+      const best = bestRecord(k, old, mine);
+      if (best) body[k] = best;
+    }
+    try { await lb.db.doc('scores/' + lb.uid).set(body); return 'ok'; }
+    catch (e) { if (e && e.code === 'invalid_argument') lb.readOnly = true; return 'error'; }
+  });
+  return lb.writeChain;
+}
+async function autoSubmit() {
+  if (!lastResult || !lastResult.value || !nickname) return;
+  const r = await submitRecord(lastResult.mode, lastResult.value);
+  if (r === 'ok') lastResult.submitted = true;
+  updateResultRank();
+}
+
+/* ---------- result ---------- */
+function resultHeadline(r) {
+  if (r.mode === 'sprint') return r.failedSprint ? '未完走' : 'クリア！';
+  if (r.mode === 'ultra') return r.finished ? 'タイムアップ' : 'ゲームオーバー';
+  return 'ゲームオーバー';
+}
+function shareText(r) {
+  const m = MODES[r.mode].name;
+  if (r.mode === 'sprint') return r.failedSprint ? `ブロックドロップ ${m}：${r.lines}ラインで力尽きた…` : `ブロックドロップ ${m}を ${fmtTime(r.value)} で完走！`;
+  return `ブロックドロップ ${m}で ${fmtNum(r.score)} 点！（${r.lines}ライン）`;
+}
+function showResult() {
+  const r = lastResult; if (!r) return;
+  const main = r.mode === 'sprint' ? (r.failedSprint ? `${r.lines}/40` : fmtTime(r.value)) : fmtNum(r.score);
+  const cells = r.mode === 'sprint'
+    ? [['PIECES', r.pieces], ['T-SPIN', r.stats.tspins], ['MAX COMBO', Math.max(0, r.stats.maxCombo)]]
+    : [['LINES', r.lines], ['LEVEL', r.level], ['T-SPIN', r.stats.tspins]];
+  const canSubmit = r.value && lb.status === 'live' && !lb.readOnly;
+  showScreen('result', `
+    <h2 style="text-align:center;margin-top:12px">${resultHeadline(r)}</h2>
+    <p class="sub">${MODES[r.mode].name}</p>
+    <div class="big">${main}</div>
+    ${r.isBest ? '<span class="badge">自己ベスト更新</span>' : `<p class="note">自己ベスト ${fmtRecord(r.mode, bests[r.mode])}</p>`}
+    <div class="result-grid">${cells.map(([l, v]) => `<div><span class="lbl">${l}</span><span class="val">${v}</span></div>`).join('')}</div>
+    <div id="rankArea"></div>
+    ${canSubmit ? `<div class="setting"><span class="lbl">ランキングに登録する名前</span><div class="field">
+      <input id="nameInput" maxlength="12" placeholder="ニックネーム（12文字まで）" value="${esc(nickname)}" autocomplete="nickname">
+      <button class="btn" data-go="submit">登録</button></div></div>` : (r.value ? `<div class="setting"><span class="lbl">この端末のランキングに残す名前</span><div class="field">
+      <input id="nameInput" maxlength="12" placeholder="ニックネーム（12文字まで）" value="${esc(nickname)}" autocomplete="nickname">
+      <button class="btn" data-go="saveName">保存</button></div></div>` : '')}
+    <button class="cta" data-go="restart">もう一度</button>
+    <div class="row"><button class="btn" data-go="copy">結果をコピー</button><button class="btn" data-go="rankFromResult">ランキング</button></div>
+    <div id="copyArea"></div>
+    <button class="btn" data-go="title">タイトルへ</button>`);
+  updateResultRank();
+}
+function updateResultRank() {
+  const el = $('rankArea'); if (!el || !lastResult) return;
+  const rk = lastResult.submitted && lb.uid ? rankOf(lastResult.mode, lb.uid) : null;
+  const bold = n => `<b style="color:var(--accent);font-family:var(--font-display);font-size:18px">${n}位</b>`;
+  if (rk) el.innerHTML = `<p class="sub">みんなのランキング ${bold(rk)}（${entriesFor(lastResult.mode).length}人中）</p>`;
+  else if (lastResult.localRank) el.innerHTML = `<p class="sub">この端末のランキング ${bold(lastResult.localRank)}</p>`;
+  else el.innerHTML = '';
+}
+async function copyResult() {
+  const text = shareText(lastResult);
+  const area = $('copyArea');
+  try {
+    await navigator.clipboard.writeText(text);
+    area.innerHTML = '<p class="note">コピーしました。LINEなどに貼り付けて送れます。</p>';
+  } catch (e) {
+    area.innerHTML = `<p class="note">下の文を長押ししてコピーしてください</p><textarea class="copy-fallback" readonly>${esc(text)}</textarea>`;
+    const ta = area.querySelector('textarea'); ta.focus(); ta.select();
+  }
+}
+function saveName() {
+  const inp = $('nameInput'); if (!inp) return;
+  nickname = inp.value.trim().slice(0, 12); store.set('blockdrop-name', nickname);
+}
+
+/* ---------- screen events ---------- */
+screenEl.addEventListener('click', async e => {
+  const set = e.target.closest('[data-set]');
+  if (set) {
+    const s = SETTINGS_SCHEMA.find(x => x.key === set.dataset.set);
+    settings[s.key] = s.opts[+set.dataset.idx][0];
+    Snd.init(); applySettings(); Snd.play('rotate');
+    const y = screenEl.scrollTop; showSettings(); screenEl.scrollTop = y;
+    return;
+  }
+  const sc = e.target.closest('[data-scope]');
+  if (sc) { rankScope = sc.dataset.scope; showRanking(); return; }
+  const tab = e.target.closest('[data-tab]');
+  if (tab) { rankTab = tab.dataset.tab; showRanking(); return; }
+  const go = e.target.closest('[data-go]'); if (!go) return;
+  const a = go.dataset.go;
+  Snd.init();
+  if (a.startsWith('mode:')) newGame(a.slice(5));
+  else if (a === 'resume') resume();
+  else if (a === 'restart') newGame(mode);
+  else if (a === 'title') showTitle();
+  else if (a === 'settings') showSettings(screenName);
+  else if (a === 'rank') { rankTab = mode; showRanking('title'); }
+  else if (a === 'rankFromResult') { rankTab = lastResult ? lastResult.mode : mode; showRanking('result'); }
+  else if (a === 'back') {
+    if (settingsReturn === 'pause') showPause();
+    else if (settingsReturn === 'result') showResult();
+    else showTitle();
+  }
+  else if (a === 'saveName') {
+    saveName();
+    if (lastResult) renameLocal(lastResult.localAt, nickname || 'ななし');
+    if (lb.status === 'live' && !lb.readOnly && lb.docs.has(lb.uid)) await submitRecord(mode, 0);
+    if (screenName === 'rank') showRanking(); else go.textContent = '保存しました';
+  }
+  else if (a === 'submit') {
+    saveName();
+    renameLocal(lastResult.localAt, nickname || 'ななし');
+    go.disabled = true; go.textContent = '登録中…';
+    const r = await submitRecord(lastResult.mode, lastResult.value);
+    if (r === 'ok') { lastResult.submitted = true; go.textContent = '登録済み'; updateResultRank(); }
+    else { go.disabled = false; go.textContent = '登録'; const n = document.createElement('p'); n.className = 'note';
+      n.textContent = lb.readOnly ? '登録する権限がありません。共有設定を確認してください。' : '登録できませんでした。通信状態を確認してもう一度お試しください。';
+      go.closest('.setting').after(n); }
+  }
+  else if (a === 'copy') copyResult();
+});
+
+$('pauseBtn').addEventListener('click', () => state === 'pause' ? resume() : pause());
+$('holdBox').addEventListener('click', hold);
+document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
+
+/* ================= board gestures ================= */
+const SENS = { low: 1.15, mid: 0.85, high: 0.6 };
+/* Pointer Events where available; plain touch events on older phones */
+const HAS_PE = 'PointerEvent' in window;
+const TOUCH_EV = { down: 'touchstart', move: 'touchmove', up: 'touchend', cancel: 'touchcancel' };
+function bindPointer(el, kind, fn) {
+  if (HAS_PE) { el.addEventListener('pointer' + kind, fn); return; }
+  el.addEventListener(TOUCH_EV[kind], e => {
+    const ts = e.changedTouches;
+    for (let i = 0; i < ts.length; i++) {
+      const t = ts[i];
+      fn({ pointerId: t.identifier, clientX: t.clientX, clientY: t.clientY, target: e.target, preventDefault: () => e.preventDefault() });
+    }
+  }, { passive: false });
+}
+let g = null;
+bindPointer(stage, 'down', e => {
+  Snd.init();
+  if (state !== 'play' && state !== 'clearing') return;
+  e.preventDefault();
+  g = { id: e.pointerId, x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY,
+        t0: performance.now(), ax: 0, ay: 0, axis: null, hist: [] };
+  try { stage.setPointerCapture(e.pointerId); } catch (_) {}
+});
+bindPointer(stage, 'move', e => {
+  if (!g || e.pointerId !== g.id) return;
+  const now = performance.now();
+  g.hist.push([now, e.clientX, e.clientY]); while (g.hist.length > 8) g.hist.shift();
+  const dx = e.clientX - g.lx, dy = e.clientY - g.ly;
+  g.lx = e.clientX; g.ly = e.clientY;
+  if (!g.axis) {
+    const tx = e.clientX - g.x0, ty = e.clientY - g.y0;
+    if (Math.hypot(tx, ty) < 10) return;
+    g.axis = Math.abs(tx) > Math.abs(ty) ? 'x' : 'y';
+    g.ax = tx; g.ay = ty;
+  } else { g.ax += dx; g.ay += dy; }
+  if (g.axis === 'x') {
+    const step = cell * (SENS[settings.sens] || 0.85);
+    while (g.ax >= step) { move(1); g.ax -= step; }
+    while (g.ax <= -step) { move(-1); g.ax += step; }
+  } else {
+    const step = cell * (SENS[settings.sens] || 0.85) * 1.1;
+    while (g.ay >= step) { softDrop(); g.ay -= step; }
+  }
+});
+bindPointer(stage, 'up', e => {
+  if (!g || e.pointerId !== g.id) return;
+  const now = performance.now(), dt = now - g.t0, ty = e.clientY - g.y0;
+  let vy = 0;
+  const old = g.hist.find(h => now - h[0] < 90);
+  if (old && now - old[0] > 5) vy = (e.clientY - old[2]) / (now - old[0]);
+  if (g.axis === 'y' && vy > 0.7 && ty > cell * 1.2) hardDrop();
+  else if (g.axis === 'y' && vy < -0.5 && ty < -cell * 1.2) hold();
+  else if (!g.axis && dt < 350) {
+    const rect = stage.getBoundingClientRect();
+    rotate(e.clientX < rect.left + rect.width / 2 ? -1 : 1);
+  }
+  g = null;
+});
+bindPointer(stage, 'cancel', e => { if (g && e.pointerId === g.id) g = null; });
+
+/* ================= buttons ================= */
+const ACTIONS = { left: () => move(-1), right: () => move(1), down: softDrop,
+                  rotl: () => rotate(-1), rotr: () => rotate(1), drop: hardDrop };
+const REPEAT = { left: true, right: true, down: true };
+document.querySelectorAll('.key').forEach(btn => {
+  const act = btn.dataset.act; let t1 = null, t2 = null;
+  const stop = () => { btn.classList.remove('on'); clearTimeout(t1); clearInterval(t2); t1 = t2 = null; };
+  bindPointer(btn, 'down', e => {
+    e.preventDefault();
+    Snd.init();
+    try { btn.setPointerCapture(e.pointerId); } catch (_) {}
+    btn.classList.add('on');
+    ACTIONS[act]();
+    if (REPEAT[act]) t1 = setTimeout(() => { t2 = setInterval(ACTIONS[act], act === 'down' ? 40 : 55); }, 160);
+  });
+  bindPointer(btn, 'up', stop); bindPointer(btn, 'cancel', stop);
+  if (HAS_PE) btn.addEventListener('lostpointercapture', stop);
+  btn.addEventListener('contextmenu', e => e.preventDefault());
+});
+
+/* ================= keyboard ================= */
+document.addEventListener('keydown', e => {
+  if (e.target && e.target.tagName === 'INPUT') return;
+  const k = e.key;
+  if (k === 'p' || k === 'Escape') { if (state === 'pause') resume(); else pause(); return; }
+  if (state !== 'play') return;
+  const map = { ArrowLeft: () => move(-1), ArrowRight: () => move(1), ArrowDown: softDrop,
+    ArrowUp: () => rotate(1), x: () => rotate(1), z: () => rotate(-1), ' ': hardDrop, c: hold, Shift: hold };
+  if (map[k]) { e.preventDefault(); map[k](); }
+});
+
+/* ================= loop ================= */
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(100, now - last); last = now;
+  update(dt); draw();
+  if (state === 'play' || state === 'clearing') { hudTick += dt; if (hudTick > 50) { hudTick = 0; updateHud(); } }
+  requestAnimationFrame(frame);
+}
+document.addEventListener('touchmove', e => { if (!e.target.closest('.screen')) e.preventDefault(); }, { passive: false });
+setupMini();
+applySettings();
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 250));
+if (window.ResizeObserver) new ResizeObserver(resize).observe($('wellWrap'));
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('visibilitychange', () => { if (!document.hidden && state === 'play') requestWake(); });
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => draw());
+resize(); updateHud(); drawSide(); showTitle();
+initLeaderboard();
+requestAnimationFrame(frame);
+})();
+</script>
+</body></html>
